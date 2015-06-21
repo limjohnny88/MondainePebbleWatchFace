@@ -1,0 +1,35 @@
+{
+    "appKeys": {},
+    "capabilities": [
+        ""
+    ],
+    "companyName": "Johnny Lim",
+    "longName": "Mondaine",
+    "projectType": "native",
+    "resources": {
+        "media": [
+            {
+                "file": "images/mondaine_index.png",
+                "menuIcon": true,
+                "name": "IMAGE_MONDAINEINDEX",
+                "type": "png"
+            },
+            {
+                "file": "images/resize_icon-mondaine-sbb2.png",
+                "name": "IMAGE_MONDAINE2",
+                "type": "png"
+            }
+        ]
+    },
+    "sdkVersion": "3",
+    "shortName": "Mondaine",
+    "targetPlatforms": [
+        "aplite",
+        "basalt"
+    ],
+    "uuid": "a70d8f01-e9bf-4c3a-8d4f-4b3d9dfa8ee2",
+    "versionLabel": "1.0",
+    "watchapp": {
+        "watchface": true
+    }
+}
