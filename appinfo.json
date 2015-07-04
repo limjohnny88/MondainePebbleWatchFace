@@ -1,7 +1,12 @@
 {
-    "appKeys": {},
+    "appKeys": {
+        "dateoption": 2,
+        "dialcolor": 0,
+        "hourlyvibration": 3,
+        "secondhandoption": 1
+    },
     "capabilities": [
-        ""
+        "configurable"
     ],
     "companyName": "Johnny Lim",
     "longName": "Mondaine",
@@ -9,14 +14,29 @@
     "resources": {
         "media": [
             {
-                "file": "images/mondaine_index.png",
-                "menuIcon": true,
-                "name": "IMAGE_MONDAINEINDEX",
+                "file": "images/resize_icon-mondaine-sbb-black.png",
+                "name": "IMAGE_MONDAINE_BLACKBG",
                 "type": "png"
             },
             {
-                "file": "images/resize_icon-mondaine-sbb2.png",
-                "name": "IMAGE_MONDAINE2",
+                "file": "images/resize_icon-mondaine-sbb-white.png",
+                "name": "IMAGE_MONDAINE_WHITEBG",
+                "type": "png"
+            },
+            {
+                "file": "images/resize_icon-mondaine-sbb-black_nl.png",
+                "name": "IMAGE_MONDAINE_BLACKNLBG",
+                "type": "png"
+            },
+            {
+                "file": "images/resize_icon-mondaine-sbb-white_nl.png",
+                "name": "IMAGE_MONDAINE_WHITENLBG",
+                "type": "png"
+            },
+            {
+                "file": "images/mondaine_index.png",
+                "menuIcon": true,
+                "name": "IMAGE_MONDAINE_INDEX",
                 "type": "png"
             }
         ]
@@ -28,7 +48,7 @@
         "basalt"
     ],
     "uuid": "a70d8f01-e9bf-4c3a-8d4f-4b3d9dfa8ee2",
-    "versionLabel": "1.0",
+    "versionLabel": "1.1",
     "watchapp": {
         "watchface": true
     }

@@ -1,13 +1,43 @@
 #include "pebble.h"
 #include "main.h"
 
-static Window *window;
+#define CONFIGS_KEY 0
+  
+static int s_persist_value_read, s_persist_value_written;
+static AppSync s_sync;
+static uint8_t s_sync_buffer[128];
+
+typedef struct Persist {
+  char dialcolor[10];
+  char secondhandoption[10];
+  char dateoption[10];
+  char hourlyvibration[10];
+} __attribute__((__packed__)) Persist;
+
+Persist configs = {
+  .dialcolor = "white",
+  .secondhandoption = "quartz",
+  .dateoption = "nodate",
+  .hourlyvibration = "off"
+};
+
+enum {
+  DialColor_KEY = 0x0,
+  SecondHandOption_KEY = 0x1,
+  DateOption_KEY = 0x2,
+  HourlyVibration_KEY = 0x3
+};
+
+static Window *s_window;
 static Layer *s_hands_layer;
 
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
 
 static GPath *s_minute_arrow, *s_hour_arrow;
+
+static GFont s_res_gothic_18_bold;
+static TextLayer *s_textlayer_date;
 
 static void hands_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
@@ -16,125 +46,343 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   
+  // Date
+  if (strcmp(configs.dateoption, "nodate") == 0) {
+    layer_set_hidden((Layer *)s_textlayer_date, true);
+  }
+  else {
+    static char date[3];
+    strftime(date, 3, "%d", t);
+    text_layer_set_text(s_textlayer_date, date);
+    
+    #ifdef PBL_COLOR
+      graphics_context_set_stroke_width(ctx, 2);
+      if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorDarkGray);
+        graphics_context_set_stroke_color(ctx, GColorDarkGray);
+        text_layer_set_text_color(s_textlayer_date, GColorDarkGray);
+      }
+      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        text_layer_set_text_color(s_textlayer_date, GColorWhite);
+      };
+    #else
+      if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorBlack);
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+        text_layer_set_text_color(s_textlayer_date, GColorBlack);
+      }
+      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        text_layer_set_text_color(s_textlayer_date, GColorWhite);
+      }
+    #endif
+    
+    // Date box
+    graphics_draw_rect(ctx, GRect(102, 74, 22, 20));
+    layer_set_hidden((Layer *)s_textlayer_date, false);
+  }
+ 
+  #ifdef PBL_COLOR
+      graphics_context_set_stroke_width(ctx, 1);
+  #endif
+  
   // Hour hand
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_context_set_stroke_color(ctx, GColorBlack);
+  if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+  }
+  else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_stroke_color(ctx, GColorWhite);
+  }
 
   gpath_rotate_to(s_hour_arrow, (TRIG_MAX_ANGLE * (((t->tm_hour % 12) * 6) + (t->tm_min / 10))) / (12 * 6));
   gpath_draw_filled(ctx, s_hour_arrow);
   gpath_draw_outline(ctx, s_hour_arrow);
   
   // Minute/hour hand
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_context_set_stroke_color(ctx, GColorBlack);
+  if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+  }
+  else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_context_set_stroke_color(ctx, GColorWhite);
+  }
   
   gpath_rotate_to(s_minute_arrow, TRIG_MAX_ANGLE * t->tm_min / 60);
   gpath_draw_filled(ctx, s_minute_arrow);
   gpath_draw_outline(ctx, s_minute_arrow);
-
+  
   // Second hand
-  #ifdef PBL_COLOR
-    graphics_context_set_fill_color(ctx, GColorRed);
-    graphics_context_set_stroke_color(ctx, GColorRed);
-  #else
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_context_set_stroke_color(ctx, GColorBlack);
-  #endif
+  if (strcmp(configs.secondhandoption, "off") != 0) {
+    #ifdef PBL_COLOR
+      graphics_context_set_fill_color(ctx, GColorRed);
+      graphics_context_set_stroke_color(ctx, GColorRed);
+    #else
+      if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorBlack);
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+      }
+      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+      }
+    #endif
+      
+    #ifdef PBL_COLOR
+    graphics_context_set_stroke_width(ctx, 3);
+    #endif
+      
+    int16_t second_hand_length = (bounds.size.w / 2) - 22;
+    int16_t second_hand_opp_length = 16;
+     
+    int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
     
-  #ifdef PBL_COLOR
-  graphics_context_set_stroke_width(ctx, 3);
-  #endif
+    GPoint second_hand = {
+      .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x ,
+      .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.y ,
+    };
     
-  int16_t second_hand_length = (bounds.size.w / 2) - 22;
-  int16_t second_hand_opp_length = 16;
-   
-  int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
+    graphics_draw_line(ctx, second_hand, center);
+    
+    GPoint second_hand_opp = {
+      .x = (int16_t)(-sin_lookup(second_angle) * (int32_t)second_hand_opp_length / TRIG_MAX_RATIO) + center.x ,
+      .y = (int16_t)(cos_lookup(second_angle) * (int32_t)second_hand_opp_length / TRIG_MAX_RATIO) + center.y ,
+    };
+    
+    graphics_draw_line(ctx, second_hand_opp, center);
+    
+     // Second hand circle
+    graphics_fill_circle(ctx, second_hand, 5);
+    
+    
+    // Dot in the middle
+    #ifdef PBL_COLOR
+      graphics_context_set_fill_color(ctx, GColorRed);
+      graphics_context_set_stroke_color(ctx, GColorRed);
+    #else
+      if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorBlack);
+        graphics_context_set_stroke_color(ctx, GColorBlack);
+      }
+      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+      }
+    #endif
+    
+    graphics_fill_circle(ctx, GPoint(bounds.size.w / 2,bounds.size.h / 2), 4);
+  }
   
-  GPoint second_hand = {
-    .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x ,
-    .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.y ,
-  };
-  
-  graphics_draw_line(ctx, second_hand, center);
-  
-  GPoint second_hand_opp = {
-    .x = (int16_t)(-sin_lookup(second_angle) * (int32_t)second_hand_opp_length / TRIG_MAX_RATIO) + center.x ,
-    .y = (int16_t)(cos_lookup(second_angle) * (int32_t)second_hand_opp_length / TRIG_MAX_RATIO) + center.y ,
-  };
-  
-  graphics_draw_line(ctx, second_hand_opp, center);
-  
-   // Second hand circle
-  graphics_fill_circle(ctx, second_hand, 5);
-  
-  
-  // Dot in the middle
-  #ifdef PBL_COLOR
-    graphics_context_set_fill_color(ctx, GColorRed);
-    graphics_context_set_stroke_color(ctx, GColorRed);
-  #else
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_context_set_stroke_color(ctx, GColorBlack);
-  #endif
-  
-  graphics_fill_circle(ctx, GPoint(bounds.size.w / 2,bounds.size.h / 2), 4);
+  // Hourly vibration
+  if (t->tm_min == 0 && t->tm_sec == 0) {
+    if (strcmp(configs.hourlyvibration, "short") == 0) {
+      vibes_short_pulse();
+    }
+    else if (strcmp(configs.hourlyvibration, "long") == 0) {
+      vibes_long_pulse();
+    }
+    else if (strcmp(configs.hourlyvibration, "double") == 0) {
+      vibes_double_pulse();
+    }
+  }
+
 }
 
-static void handle_second_tick(struct tm *tick_time, TimeUnits units_changed) {
-  layer_mark_dirty(window_get_root_layer(window));
+static void load_background_image() {
+  gbitmap_destroy(s_background_bitmap);
+  if (strcmp(configs.dialcolor, "white") == 0) {
+    s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MONDAINE_WHITEBG);
+  }
+  else if (strcmp(configs.dialcolor, "white_nl") == 0) {
+    s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MONDAINE_WHITENLBG);
+  }
+  else if (strcmp(configs.dialcolor, "black") == 0) {
+    s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MONDAINE_BLACKBG);
+  }
+   else if (strcmp(configs.dialcolor, "black_nl") == 0) {
+    s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MONDAINE_BLACKNLBG);
+  }
+  bitmap_layer_set_bitmap(s_background_layer, s_background_bitmap);
+}
+
+
+static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
+  layer_mark_dirty(window_get_root_layer(s_window));
+}
+
+static void load_persistent_config() {
+  if (persist_exists(CONFIGS_KEY)) {
+    s_persist_value_read = persist_read_data(CONFIGS_KEY, &configs, sizeof(configs));
+  }
+}
+
+static void save_persistent_config() {
+  s_persist_value_written = persist_write_data(CONFIGS_KEY, &configs, sizeof(configs));
+}
+
+
+static void s_sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
+  //APP_LOG(APP_LOG_LEVEL_DEBUG, "sync_tuple_changed_callback, key: %lu", key);
+  //APP_LOG(APP_LOG_LEVEL_DEBUG, "sync_tuple_changed_callback, new_tuple->value->cstring: %s", new_tuple->value->cstring);
+  
+  switch (key) {
+    case DialColor_KEY:  
+      strcpy(configs.dialcolor, new_tuple->value->cstring);
+    
+      load_background_image();
+    
+      break;
+    case SecondHandOption_KEY:
+      strcpy(configs.secondhandoption, new_tuple->value->cstring);
+ 
+      if (strcmp(configs.secondhandoption, "quartz") == 0) {
+        tick_timer_service_unsubscribe();
+        tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+      }
+      else if (strcmp(configs.secondhandoption, "stop2go") == 0) {
+        
+      }
+      else if (strcmp(configs.secondhandoption, "off") == 0) {
+        tick_timer_service_unsubscribe();
+        tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
+      }
+    
+      break;
+    case DateOption_KEY:
+      strcpy(configs.dateoption, new_tuple->value->cstring);
+    
+      break;
+    case HourlyVibration_KEY:
+      strcpy(configs.hourlyvibration, new_tuple->value->cstring);
+    
+      break;
+  }
+  
+
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  handle_tick(t, HOUR_UNIT + MINUTE_UNIT + SECOND_UNIT);
 }
 
 static void window_load(Window *window) {
-  Layer *window_layer = window_get_root_layer(window);
+  Layer *window_layer = window_get_root_layer(s_window);
   GRect bounds = layer_get_bounds(window_layer);
   
   // Load Mondaine background image
-  s_background_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MONDAINE2);
   s_background_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
-  bitmap_layer_set_bitmap(s_background_layer, s_background_bitmap);
+  load_background_image();
   layer_add_child(window_layer, bitmap_layer_get_layer(s_background_layer));
+  
+  // Initalize date layer
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  static char date[3];
+  strftime(date, 3, "%d", t);
+  
+  s_res_gothic_18_bold = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  
+  s_textlayer_date = text_layer_create(GRect(102, 72, 22, 20));
 
-  // Initalize Hands layer
+  #ifdef PBL_COLOR
+    if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+      text_layer_set_text_color(s_textlayer_date, GColorDarkGray);
+    }
+    else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      text_layer_set_text_color(s_textlayer_date, GColorWhite);
+    };
+  #else
+    if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
+      text_layer_set_text_color(s_textlayer_date, GColorBlack);
+    }
+    else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      text_layer_set_text_color(s_textlayer_date, GColorWhite);
+    }
+  #endif
+    
+  text_layer_set_background_color(s_textlayer_date, GColorClear);
+  text_layer_set_text(s_textlayer_date, date);
+  text_layer_set_text_alignment(s_textlayer_date, GTextAlignmentCenter);
+  text_layer_set_font(s_textlayer_date, s_res_gothic_18_bold);
+  layer_add_child(window_get_root_layer(s_window), (Layer *)s_textlayer_date);
+  
+  if (strcmp(configs.dateoption, "nodate") == 0) {
+    layer_set_hidden((Layer *)s_textlayer_date, true);
+  }
+  
+  // Initalize hands layer
   s_hands_layer = layer_create(bounds);
   layer_set_update_proc(s_hands_layer, hands_update_proc);
   layer_add_child(window_layer, s_hands_layer);
 }
 
 static void window_unload(Window *window) {
+  gbitmap_destroy(s_background_bitmap);
   bitmap_layer_destroy(s_background_layer);
 
+  gpath_destroy(s_minute_arrow);
+  gpath_destroy(s_hour_arrow);
+  
   layer_destroy(s_hands_layer);
+  text_layer_destroy(s_textlayer_date);
 }
 
 static void init() {
-  window = window_create();
-  window_set_window_handlers(window, (WindowHandlers) {
+  const int inbound_size = 128;
+  const int outbound_size = 128;
+  app_message_open(inbound_size, outbound_size);
+  
+  load_persistent_config();
+  
+  
+  Tuplet initial_values[] = {
+    TupletCString(DialColor_KEY, configs.dialcolor),
+    TupletCString(SecondHandOption_KEY, configs.secondhandoption),
+    TupletCString(DateOption_KEY, configs.dateoption),
+    TupletCString(HourlyVibration_KEY, configs.hourlyvibration)
+  };
+  
+  app_sync_init(&s_sync, s_sync_buffer, sizeof(s_sync_buffer), initial_values, ARRAY_LENGTH(initial_values), s_sync_tuple_changed_callback, NULL, NULL);
+  
+  
+  s_window = window_create();
+  window_set_window_handlers(s_window, (WindowHandlers) {
     .load = window_load,
     .unload = window_unload,
   });
-  window_stack_push(window, true);
+  window_stack_push(s_window, true);
 
   // Init hand paths
   s_minute_arrow = gpath_create(&MINUTE_HAND_POINTS);
   s_hour_arrow = gpath_create(&HOUR_HAND_POINTS);
 
  
-  Layer *window_layer = window_get_root_layer(window);
+  Layer *window_layer = window_get_root_layer(s_window);
   GRect bounds = layer_get_bounds(window_layer);
   GPoint center = grect_center_point(&bounds);
   
   gpath_move_to(s_minute_arrow, center);
   gpath_move_to(s_hour_arrow, center);
-
-  tick_timer_service_subscribe(SECOND_UNIT, handle_second_tick);
+  
+  if (strcmp(configs.secondhandoption, "off") == 0) {
+    tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
+  }
+  else {
+    tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+  }
 }
 
 static void deinit() {
-  gpath_destroy(s_minute_arrow);
-  gpath_destroy(s_hour_arrow);
+  save_persistent_config();
   
   tick_timer_service_unsubscribe();
-  window_destroy(window);
+  window_destroy(s_window);
+  
+  app_sync_deinit(&s_sync);
 }
 
 int main() {
