@@ -1,5 +1,6 @@
 {
     "appKeys": {
+        "bluetoothstatusdetection": 4,
         "dateoption": 2,
         "dialcolor": 0,
         "hourlyvibration": 3,
@@ -13,6 +14,16 @@
     "projectType": "native",
     "resources": {
         "media": [
+            {
+                "file": "images/bluetooth-disconnect.png",
+                "name": "IMAGE_BLUETOOTHDISCONNECTED",
+                "type": "png"
+            },
+            {
+                "file": "images/bluetooth-connect.png",
+                "name": "IMAGE_BLUETOOTHCONNECTED",
+                "type": "png"
+            },
             {
                 "file": "images/resize_icon-mondaine-sbb-black.png",
                 "name": "IMAGE_MONDAINE_BLACKBG",
@@ -48,7 +59,7 @@
         "basalt"
     ],
     "uuid": "a70d8f01-e9bf-4c3a-8d4f-4b3d9dfa8ee2",
-    "versionLabel": "1.1",
+    "versionLabel": "1.2",
     "watchapp": {
         "watchface": true
     }

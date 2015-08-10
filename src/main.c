@@ -1,8 +1,17 @@
 #include "pebble.h"
 #include "main.h"
 
+// Number of updates per second, must be < 1000
+#define STOP2GO_TICK_RESOLUTION 4
+
+/*
+// Force the users to shake X times to dismiss the bluetooth disconnection screen
+#define BLUETOOTH_DISCONNECTION_SHAKE_TIMES 2
+static uint8_t s_bluetooth_disconnection_dismissal_attempt = 0;
+*/
+
 #define CONFIGS_KEY 0
-  
+
 static int s_persist_value_read, s_persist_value_written;
 static AppSync s_sync;
 static uint8_t s_sync_buffer[128];
@@ -12,20 +21,23 @@ typedef struct Persist {
   char secondhandoption[10];
   char dateoption[10];
   char hourlyvibration[10];
+  uint8_t bluetoothstatusdetection;
 } __attribute__((__packed__)) Persist;
 
 Persist configs = {
   .dialcolor = "white",
   .secondhandoption = "quartz",
   .dateoption = "nodate",
-  .hourlyvibration = "off"
+  .hourlyvibration = "off",
+  .bluetoothstatusdetection = 0
 };
 
 enum {
   DialColor_KEY = 0x0,
   SecondHandOption_KEY = 0x1,
   DateOption_KEY = 0x2,
-  HourlyVibration_KEY = 0x3
+  HourlyVibration_KEY = 0x3,
+  BluetoothStatusDetection_KEY = 0x4
 };
 
 static Window *s_window;
@@ -38,6 +50,14 @@ static GPath *s_minute_arrow, *s_hour_arrow;
 
 static GFont s_res_gothic_18_bold;
 static TextLayer *s_textlayer_date;
+
+Window *bluetooth_connected_splash_window;
+static BitmapLayer *s_bluetoothconnected_layer;
+static GBitmap *s_bluetoothconnected_bitmap;
+
+Window *bluetooth_disconnected_splash_window;
+static BitmapLayer *s_bluetoothdisconnected_layer;
+static GBitmap *s_bluetoothdisconnected_bitmap;
 
 static void hands_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
@@ -118,7 +138,7 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
   gpath_draw_outline(ctx, s_minute_arrow);
   
   // Second hand
-  if (strcmp(configs.secondhandoption, "off") != 0) {
+  if (strcmp(configs.secondhandoption, "quartz") == 0 || strcmp(configs.secondhandoption, "stop2go") == 0) {
     #ifdef PBL_COLOR
       graphics_context_set_fill_color(ctx, GColorRed);
       graphics_context_set_stroke_color(ctx, GColorRed);
@@ -140,7 +160,18 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
     int16_t second_hand_length = (bounds.size.w / 2) - 22;
     int16_t second_hand_opp_length = 16;
      
-    int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
+    double second_angle = 0;
+    
+    if (strcmp(configs.secondhandoption, "quartz") == 0) {
+      second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
+    }
+    // Stop2go
+    else if (strcmp(configs.secondhandoption, "stop2go") == 0) {
+      // Move the second hand around the watch in 58 seconds (60/58 = 1.03448275862)
+      second_angle = TRIG_MAX_ANGLE * 1.03448275862 * (t->tm_sec / 60.0 + time_ms(NULL, NULL) / 60000.0);
+      // Pause the second at 12 o'clock mark
+      second_angle = (second_angle >= TRIG_MAX_ANGLE) ? TRIG_MAX_ANGLE : second_angle;
+    }
     
     GPoint second_hand = {
       .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x ,
@@ -177,20 +208,6 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
     
     graphics_fill_circle(ctx, GPoint(bounds.size.w / 2,bounds.size.h / 2), 4);
   }
-  
-  // Hourly vibration
-  if (t->tm_min == 0 && t->tm_sec == 0) {
-    if (strcmp(configs.hourlyvibration, "short") == 0) {
-      vibes_short_pulse();
-    }
-    else if (strcmp(configs.hourlyvibration, "long") == 0) {
-      vibes_long_pulse();
-    }
-    else if (strcmp(configs.hourlyvibration, "double") == 0) {
-      vibes_double_pulse();
-    }
-  }
-
 }
 
 static void load_background_image() {
@@ -211,8 +228,30 @@ static void load_background_image() {
 }
 
 
-static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
-  layer_mark_dirty(window_get_root_layer(s_window));
+static void handle_tick(struct tm *t, TimeUnits units_changed) {
+  if (strcmp(configs.secondhandoption, "stop2go") == 0) {
+    for (int i=0; i<STOP2GO_TICK_RESOLUTION; i++) {
+  		app_timer_register(1000 / STOP2GO_TICK_RESOLUTION * i, (void*)layer_mark_dirty, window_get_root_layer(s_window));
+    }
+  }
+  else {
+    layer_mark_dirty(window_get_root_layer(s_window));
+  }
+  
+    
+  // Hourly vibration
+  if (t->tm_min == 0 && t->tm_sec == 0) {
+    if (strcmp(configs.hourlyvibration, "short") == 0) {
+      vibes_short_pulse();
+    }
+    else if (strcmp(configs.hourlyvibration, "long") == 0) {
+      vibes_long_pulse();
+    }
+    else if (strcmp(configs.hourlyvibration, "double") == 0) {
+      vibes_double_pulse();
+    }
+  }
+
 }
 
 static void load_persistent_config() {
@@ -245,7 +284,8 @@ static void s_sync_tuple_changed_callback(const uint32_t key, const Tuple* new_t
         tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
       }
       else if (strcmp(configs.secondhandoption, "stop2go") == 0) {
-        
+        tick_timer_service_unsubscribe();
+        tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
       }
       else if (strcmp(configs.secondhandoption, "off") == 0) {
         tick_timer_service_unsubscribe();
@@ -261,6 +301,10 @@ static void s_sync_tuple_changed_callback(const uint32_t key, const Tuple* new_t
       strcpy(configs.hourlyvibration, new_tuple->value->cstring);
     
       break;
+    case BluetoothStatusDetection_KEY:
+      configs.bluetoothstatusdetection = new_tuple->value->uint8;
+    
+      break;
   }
   
 
@@ -268,6 +312,108 @@ static void s_sync_tuple_changed_callback(const uint32_t key, const Tuple* new_t
   struct tm *t = localtime(&now);
   handle_tick(t, HOUR_UNIT + MINUTE_UNIT + SECOND_UNIT);
 }
+
+
+
+static void bluetooth_connected_splash_window_load(Window *window)
+{
+  Layer *window_layer = window_get_root_layer(window);
+  
+  // Load bluetooth connected image
+  s_bluetoothconnected_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
+  s_bluetoothconnected_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BLUETOOTHCONNECTED);
+  bitmap_layer_set_bitmap(s_bluetoothconnected_layer, s_bluetoothconnected_bitmap);
+  layer_add_child(window_layer, bitmap_layer_get_layer(s_bluetoothconnected_layer));
+}
+
+static void bluetooth_connected_window_unload(Window *window)
+{
+  gbitmap_destroy(s_bluetoothconnected_bitmap);
+  bitmap_layer_destroy(s_bluetoothconnected_layer);
+}
+      
+static void bluetooth_disconnected_splash_window_load(Window *window)
+{
+  Layer *window_layer = window_get_root_layer(window);
+  
+  // Load bluetooth disconnected image
+  s_bluetoothdisconnected_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
+  s_bluetoothdisconnected_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BLUETOOTHDISCONNECTED);
+  bitmap_layer_set_bitmap(s_bluetoothdisconnected_layer, s_bluetoothdisconnected_bitmap);
+  layer_add_child(window_layer, bitmap_layer_get_layer(s_bluetoothdisconnected_layer));
+}
+
+static void bluetooth_disconnected_window_unload(Window *window)
+{
+  gbitmap_destroy(s_bluetoothdisconnected_bitmap);
+  bitmap_layer_destroy(s_bluetoothdisconnected_layer);
+}
+
+static void hide_bluetooth_connected_splash_window() {
+  window_stack_remove(bluetooth_connected_splash_window, true);
+}
+
+static void hide_bluetooth_disconnected_splash_window() {
+  window_stack_remove(bluetooth_disconnected_splash_window, true);
+}
+
+static void handle_bluetooth_connected () {
+  window_stack_remove(bluetooth_disconnected_splash_window, true);
+  window_stack_push(bluetooth_connected_splash_window, true);
+
+  vibes_long_pulse();
+  // Hide splash screen
+  app_timer_register(2000, (void*)hide_bluetooth_connected_splash_window, NULL);
+  light_enable_interaction();
+  //s_bluetooth_disconnection_dismissal_attempt = 0;
+}
+
+static void handle_bluetooth_disconnected () {
+  window_stack_remove(bluetooth_connected_splash_window, true);
+  window_stack_push(bluetooth_disconnected_splash_window, true);
+      
+  uint32_t vibes_pluse_segments[] = { 200, 100, 200, 100, 200, 100, 200, 100, 200 };
+  VibePattern vibes_pluse_pattern = {
+    .durations = vibes_pluse_segments,
+    .num_segments = ARRAY_LENGTH(vibes_pluse_segments),
+  };
+
+  vibes_enqueue_custom_pattern(vibes_pluse_pattern);
+  light_enable_interaction();
+  // Hide splash screen
+  app_timer_register(5000, (void*)hide_bluetooth_disconnected_splash_window, NULL);
+}
+
+static void bluetooth_connection_callback(bool is_connected) {
+  if (configs.bluetoothstatusdetection == 1) {
+    if (is_connected) {
+      handle_bluetooth_connected();
+    }
+    else {
+      handle_bluetooth_disconnected();
+    }
+  }
+}
+
+static void startup_bluetooth_disconnection_callback(bool is_connected) {
+  if (configs.bluetoothstatusdetection == 1) {
+    if (!is_connected) {
+      handle_bluetooth_disconnected();
+    }
+  }
+}
+
+/*
+static void tap_handler(AccelAxisType axis, int32_t direction) {
+  if (configs.bluetoothstatusdetection == 1 && !bluetooth_connection_service_peek()) {
+    s_bluetooth_disconnection_dismissal_attempt++;
+    if (s_bluetooth_disconnection_dismissal_attempt >= BLUETOOTH_DISCONNECTION_SHAKE_TIMES) {
+      window_stack_remove(bluetooth_disconnected_splash_window, true);
+      s_bluetooth_disconnection_dismissal_attempt = 0;
+    }
+  }
+}
+*/
 
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(s_window);
@@ -343,7 +489,8 @@ static void init() {
     TupletCString(DialColor_KEY, configs.dialcolor),
     TupletCString(SecondHandOption_KEY, configs.secondhandoption),
     TupletCString(DateOption_KEY, configs.dateoption),
-    TupletCString(HourlyVibration_KEY, configs.hourlyvibration)
+    TupletCString(HourlyVibration_KEY, configs.hourlyvibration),
+    TupletInteger(BluetoothStatusDetection_KEY, configs.bluetoothstatusdetection)
   };
   
   app_sync_init(&s_sync, s_sync_buffer, sizeof(s_sync_buffer), initial_values, ARRAY_LENGTH(initial_values), s_sync_tuple_changed_callback, NULL, NULL);
@@ -371,14 +518,41 @@ static void init() {
   if (strcmp(configs.secondhandoption, "off") == 0) {
     tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
   }
+  else if (strcmp(configs.secondhandoption, "quartz") == 0){
+    tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+  }
+  else if (strcmp(configs.secondhandoption, "stop2go") == 0){
+    tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+  }
   else {
     tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
   }
+  
+  // Bluetooth status detection
+  bluetooth_connected_splash_window = window_create();
+  window_set_window_handlers(bluetooth_connected_splash_window, (WindowHandlers) {
+   .load = bluetooth_connected_splash_window_load,
+   .unload = bluetooth_connected_window_unload,
+  });
+  
+  bluetooth_disconnected_splash_window = window_create();
+  window_set_window_handlers(bluetooth_disconnected_splash_window, (WindowHandlers) {
+   .load = bluetooth_disconnected_splash_window_load,
+   .unload = bluetooth_disconnected_window_unload,
+  });
+  
+  // Check bluetooth connection on page load, do action only when bluetooth is disconected.
+  startup_bluetooth_disconnection_callback(bluetooth_connection_service_peek());
+  
+  bluetooth_connection_service_subscribe(bluetooth_connection_callback);
+  //accel_tap_service_subscribe(tap_handler); 
 }
 
 static void deinit() {
   save_persistent_config();
   
+  //accel_tap_service_unsubscribe();
+  bluetooth_connection_service_unsubscribe();
   tick_timer_service_unsubscribe();
   window_destroy(s_window);
   

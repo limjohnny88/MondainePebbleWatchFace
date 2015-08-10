@@ -9,7 +9,7 @@ Pebble.addEventListener("ready", function() {
 
 Pebble.addEventListener("showConfiguration", function() {
   console.log("showing configuration");
-  Pebble.openURL('https://dl.dropboxusercontent.com/u/24424405/app/Pebble/Mondaine/1.1/configuration.html?configs=' + encodeURIComponent(JSON.stringify(configs)));
+  Pebble.openURL('https://dl.dropboxusercontent.com/u/24424405/app/Pebble/Mondaine/1.2/configuration.html?configs=' + encodeURIComponent(JSON.stringify(configs)));
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {
@@ -47,7 +47,7 @@ function returnConfigToPebble() {
   Pebble.sendAppMessage(configs,
       function(e) {
         console.log("Config info sent to Pebble successfully!");
-	      console.log(e.error.message);
+	      //console.log(e.error.message);
       },
       function(e) {
         console.log("Error sending Config info to Pebble!");
