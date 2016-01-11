@@ -70,7 +70,8 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
   if (strcmp(configs.dateoption, "nodate") == 0) {
     layer_set_hidden((Layer *)s_textlayer_date, true);
   }
-  else {
+  else 
+  {
     static char date[3];
     strftime(date, 3, "%d", t);
     text_layer_set_text(s_textlayer_date, date);
@@ -82,7 +83,8 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
         graphics_context_set_stroke_color(ctx, GColorDarkGray);
         text_layer_set_text_color(s_textlayer_date, GColorDarkGray);
       }
-      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      // else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      else {
         graphics_context_set_fill_color(ctx, GColorWhite);
         graphics_context_set_stroke_color(ctx, GColorWhite);
         text_layer_set_text_color(s_textlayer_date, GColorWhite);
@@ -93,7 +95,8 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
         graphics_context_set_stroke_color(ctx, GColorBlack);
         text_layer_set_text_color(s_textlayer_date, GColorBlack);
       }
-      else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      // else if (strcmp(configs.dialcolor, "black") == 0 || strcmp(configs.dialcolor, "black_nl") == 0) {
+      else {
         graphics_context_set_fill_color(ctx, GColorWhite);
         graphics_context_set_stroke_color(ctx, GColorWhite);
         text_layer_set_text_color(s_textlayer_date, GColorWhite);
@@ -101,7 +104,7 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
     #endif
     
     // Date box
-    graphics_draw_rect(ctx, GRect(102, 74, 22, 20));
+    graphics_draw_rect(ctx, GRect(bounds.size.w * 3 / 4 - 22/2, bounds.size.h/2-9, 22, 20));
     layer_set_hidden((Layer *)s_textlayer_date, false);
   }
  
@@ -318,9 +321,10 @@ static void s_sync_tuple_changed_callback(const uint32_t key, const Tuple* new_t
 static void bluetooth_connected_splash_window_load(Window *window)
 {
   Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(window_layer);
   
   // Load bluetooth connected image
-  s_bluetoothconnected_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
+  s_bluetoothconnected_layer = bitmap_layer_create(bounds);
   s_bluetoothconnected_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BLUETOOTHCONNECTED);
   bitmap_layer_set_bitmap(s_bluetoothconnected_layer, s_bluetoothconnected_bitmap);
   layer_add_child(window_layer, bitmap_layer_get_layer(s_bluetoothconnected_layer));
@@ -335,9 +339,10 @@ static void bluetooth_connected_window_unload(Window *window)
 static void bluetooth_disconnected_splash_window_load(Window *window)
 {
   Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(window_layer);
   
   // Load bluetooth disconnected image
-  s_bluetoothdisconnected_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
+  s_bluetoothdisconnected_layer = bitmap_layer_create(bounds);
   s_bluetoothdisconnected_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BLUETOOTHDISCONNECTED);
   bitmap_layer_set_bitmap(s_bluetoothdisconnected_layer, s_bluetoothdisconnected_bitmap);
   layer_add_child(window_layer, bitmap_layer_get_layer(s_bluetoothdisconnected_layer));
@@ -420,7 +425,7 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(window_layer);
   
   // Load Mondaine background image
-  s_background_layer = bitmap_layer_create(GRect(0, 0, 144, 168));
+  s_background_layer = bitmap_layer_create(bounds);
   load_background_image();
   layer_add_child(window_layer, bitmap_layer_get_layer(s_background_layer));
   
@@ -432,7 +437,7 @@ static void window_load(Window *window) {
   
   s_res_gothic_18_bold = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   
-  s_textlayer_date = text_layer_create(GRect(102, 72, 22, 20));
+  s_textlayer_date = text_layer_create(GRect(bounds.size.w * 3 / 4 - 22/2, bounds.size.h/2-11, 22, 20));
 
   #ifdef PBL_COLOR
     if (strcmp(configs.dialcolor, "white") == 0 || strcmp(configs.dialcolor, "white_nl") == 0) {
